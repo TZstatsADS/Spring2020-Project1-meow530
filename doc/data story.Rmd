@@ -1,0 +1,325 @@
+---
+title: "project 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tm)
+library(data.table)
+library(tidytext)
+library(tidyverse)
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(wordcloud)
+library(RColorBrewer)
+library(SentimentAnalysis)
+library(syuzhet)
+library(SnowballC)
+library(ggplot2)
+library(RCurl)
+library(topicmodels)
+
+library(textmineR)
+library(gplots)
+
+```
+
+#load the processed file and have a look at the genres
+
+```{r cars}
+load('/Users/meow/Documents/GitHub/Spring2020-Project1-meow530/output/processed_lyrics.RData') 
+
+unique(dt_lyrics$genre)
+
+new <- dt_lyrics %>%
+  filter(genre == 'Hip-Hop' | genre== "Country")
+
+hiphop <-dt_lyrics %>%
+  filter(genre == 'Hip-Hop')
+# 8905
+country <- dt_lyrics %>%
+  filter(genre=="Country")
+#7524
+save(new, file="/Users/meow/Documents/GitHub/Spring2020-Project1-meow530/output/new.RData")
+
+
+```
+
+### Step 2 - Preliminary cleaning of text
+
+We clean the text by converting all the letters to the lower case, and removing punctuation, numbers, empty words and extra white space.
+
+```{r text processing in tm}
+# function for removimg leading and trailing whitespace from character strings 
+leadingWhitespace <- content_transformer(function(x) str_trim(x, side = "both"))
+# remove stop words
+data("stop_words")
+
+word <- c("lot", "today", "months", "month", "wanna", "wouldnt", "wasnt", "ha", "na", "ooh", "da",
+        "gonna", "im", "dont", "aint", "wont", "yeah", "la", "oi", "nigga", "fuck",
+          "hey", "year", "years", "last", "past", "feel")
+stop.words <- c(stop_words$word, word)
+# clean the data and make a corpus
+# Both
+corpus_b <- VCorpus(VectorSource(new$lyrics))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(removeWords, stop.words) %>%
+  tm_map(removeNumbers)%>%
+  tm_map(stripWhitespace)%>%
+  tm_map(leadingWhitespace)
+
+### hiphop
+corpus_h <- VCorpus(VectorSource(hiphop$lyrics))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(removeWords, stop.words) %>%
+  tm_map(removeNumbers)%>%
+  tm_map(stripWhitespace)%>%
+  tm_map(leadingWhitespace)
+
+
+### country
+corpus_c <- VCorpus(VectorSource(country$lyrics))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(removeWords, stop.words) %>%
+  tm_map(removeNumbers)%>%
+  tm_map(stripWhitespace)%>%
+  tm_map(leadingWhitespace)
+
+
+save.corpus.to.files(bigcorp, filename = "corpus")
+
+rlang::last_error()
+```
+
+###added from wordcloud. compare word clouds for hiphop and country.
+```{r}
+### hiphop
+tdm.h<-TermDocumentMatrix(corpus_h)
+tdm.tidy.h=tidy(tdm.h)
+tdm.overall.h=summarise(group_by(tdm.tidy.h, term), sum(count))
+
+### country
+tdm.c<-TermDocumentMatrix(corpus_c)
+tdm.tidy.c=tidy(tdm.c)
+tdm.overall.c=summarise(group_by(tdm.tidy.c, term), sum(count))
+```
+
+# Step 3 - Inspect wordclouds
+```{r, fig.height=6, fig.width=6}
+### hiphop
+wordcloud(tdm.overall.h$term, tdm.overall.h$`sum(count)`,
+          scale=c(5,0.5),
+          max.words=100,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=F,
+          colors=brewer.pal(8, "Dark2"))
+
+### country
+wordcloud(tdm.overall.c$term, tdm.overall.c$`sum(count)`,
+          scale=c(5,0.5),
+          max.words=100,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(8, "Dark2"))
+```
+
+### Sentiment Analysis 
+### code from https://towardsdatascience.com/a-light-introduction-to-text-analysis-in-r-ea291a9865a8
+```{r}
+### hiphop
+sent.h <- analyzeSentiment(tdm.h, language = "english", removeStopwords = TRUE, stemming = TRUE)
+# were going to just select the Harvard-IV dictionary results ..  
+sent.h <- sent.h[,1:4]
+#Organizing it as a dataframe
+sent.h <- as.data.frame(sent.h)
+# Now lets take a look at what these sentiment values look like. 
+head(sent.h)
+
+summary(sent.h$SentimentGI)
+
+### top and bottom by song names
+final.h <- bind_cols(hiphop, sent.h)
+# now lets get the top 5 
+top.h <- final.h %>% group_by(song) %>%
+  summarize(sent.h = mean(SentimentGI)) %>%
+  arrange(desc(sent.h)) %>%
+  head(n= 5)
+
+bottom.h <- final.h %>% group_by(song) %>%
+  summarize(sent.h = mean(SentimentGI)) %>%
+  arrange(sent.h) %>%
+  head(n= 5)
+
+# country-----------------------------------------------------------------------------------------------
+sent.c <- analyzeSentiment(tdm.c, language = "english", removeStopwords = TRUE, stemming = TRUE)
+# were going to just select the Harvard-IV dictionary results ..  
+sent.c <- sent.c[,1:4]
+#Organizing it as a dataframe
+sent.c <- as.data.frame(sent.c)
+# Now lets take a look at what these sentiment values look like. 
+head(sent.c)
+
+summary(sent.c$SentimentGI)
+
+### top and bottom by song names
+final.c <- bind_cols(country, sent.c)
+# now lets get the top 5 
+top.c <- final.c %>% group_by(song) %>%
+  summarize(sent.c = mean(SentimentGI)) %>%
+  arrange(desc(sent.c)) %>%
+  head(n= 5)
+
+save(top.c, file="/Users/meow/Documents/GitHub/Spring2020-Project1-meow530/output/countryTop.RData")
+
+bottom.c <- final.c %>% group_by(song) %>%
+  summarize(sent.c = mean(SentimentGI)) %>%
+  arrange(sent.c) %>%
+  head(n= 5)
+
+save(bottom.c, file="/Users/meow/Documents/GitHub/Spring2020-Project1-meow530/output/countryBottom.RData")
+
+```
+### emotions. code from https://towardsdatascience.com/a-light-introduction-to-text-analysis-in-r-ea291a9865a8
+
+```{r}
+#hiphop
+sent2.h <- get_nrc_sentiment(hiphop$lyrics)
+# Let's look at the corpus as a whole again:
+sent3.h <- as.data.frame(colSums(sent2.h))
+sent3.h <- rownames_to_column(sent3.h) 
+colnames(sent3.h) <- c("emotion", "count")
+
+ggplot(sent3.h, aes(x = reorder(emotion,-count), y = count, fill = emotion)) + 
+  geom_bar(stat = "identity") + 
+  theme_minimal() + 
+  theme(legend.position="none", panel.grid.major = element_blank()) + 
+  labs( x = "Emotion", y = "Total Count") + 
+  ggtitle("Sentiment of country lyrics") + 
+  theme(plot.title = element_text(hjust=0.5))
+
+#country
+sent2.c <- get_nrc_sentiment(country$lyrics)
+# Let's look at the corpus as a whole again:
+sent3.c <- as.data.frame(colSums(sent2.c))
+sent3.c <- rownames_to_column(sent3.c) 
+colnames(sent3.c) <- c("emotion", "count")
+
+ggplot(sent3.c, aes(x = reorder(emotion,-count), y = count, fill = emotion)) + 
+  geom_bar(stat = "identity") + 
+  theme_minimal() + 
+  theme(legend.position="none", panel.grid.major = element_blank()) + 
+  labs( x = "Emotion", y = "Total Count") + 
+  ggtitle("Sentiment of country lyrics") + 
+  theme(plot.title = element_text(hjust=0.5))
+
+```
+
+### topic modeling code from http://tzstatsads.github.io/tutorials/wk2_TextMining.html
+```{r}
+#wk2 前期准备
+sentence.list=NULL
+for(i in 1:nrow(new)){
+  sentences=syuzhet::get_sentences(new$lyrics[i])
+  if(length(sentences)>0){
+    
+    sentence.list=rbind(sentence.list, 
+                        cbind(new[i,-ncol(new)]
+                              )
+    )
+  }
+}
+corpus.list=sentence.list
+```
+
+# LDA
+```{r}
+
+### code from https://www.tidytextmining.com/topicmodeling.html#latent-dirichlet-allocation 
+# http://tzstatsads.github.io/tutorials/wk2_TextMining.html
+
+# set a seed so that the output of the model is predictable
+
+dtm <-DocumentTermMatrix(corpus_b)
+k <- 4
+ldaOut <- LDA(dtm, k, control = list(seed = 1234))
+
+ldaOut.topics <- as.matrix(topics(ldaOut))
+table(c(1:k, ldaOut.topics))
+
+terms.beta=ldaOut@beta
+terms.beta=scale(terms.beta)
+
+topics.terms=NULL
+for(i in 1:k){
+  topics.terms=rbind(topics.terms, ldaOut@terms[order(terms.beta[i,], decreasing = TRUE)[1:8]])
+}
+topics.terms
+
+ldatopics <- tidy(ldaOut, matrix = "beta")
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+
+library(ggplot2)
+library(dplyr)
+
+ap_top_terms <- ldatopics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+#== ldaOut.terms
+ap_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered()
+
+topics.hash=c("m", "x", "w","a")
+corpus.list$ldatopic=as.vector(ldaOut.topics)
+corpus.list$ldahash=topics.hash[ldaOut.topics]
+colnames(topicProbabilities)=topics.hash
+corpus.list.df=cbind(corpus.list, topicProbabilities)
+head(corpus.list.df)
+
+
+#clustering
+par(mar=c(1,1,1,1))
+topic.summary=tbl_df(corpus.list.df)%>%
+              select(genre,m:a)%>%
+              group_by(genre)%>%
+              summarise_each(funs(mean))
+topic.summary=as.data.frame(topic.summary)
+rownames(topic.summary)=topic.summary[,1]
+topic.plot=2:5
+print(topics.hash[topic.plot])
+
+heatmap.2(as.matrix(topic.summary[,topic.plot]), 
+          scale = "column", key=F, 
+          col = bluered(100),
+          cexRow = 0.9, cexCol = 0.9, margins = c(8, 8),
+          trace = "none", density.info = "none")
+
+```
